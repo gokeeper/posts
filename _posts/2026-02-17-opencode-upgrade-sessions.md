@@ -1,20 +1,21 @@
 ---
 layout: post
-title: "Where Did My OpenCode Sessions Go? Debugging a Silent SQLite Migration"
+title: "Where Did My OpenCode Sessions Go? Debugging a Git Scope & SQLite Mystery"
+date: 2026-02-17
 ---
 
-Upgrading your dev tools is usually a straightforward process—until you launch the new version and realize your entire project history has vanished. 
+Upgrading your dev tools is usually a straightforward process—until you launch your workspace and realize your entire AI chat history has vanished. 
 
-Recently, after running an update for OpenCode to 1.2.6 on my Arch desktop, I opened my workspace only to find a completely blank session history. No recent chats, no context, just an empty sidebar. If you rely heavily on your AI coding assistant's memory, you know how frustrating this can be.
+Recently, I decided to do some housekeeping and put a few of my existing project directories into a Git repository. Shortly after, I launched OpenCode in one of those newly versioned directories, only to find a completely blank session history. No recent chats, no context, just an empty sidebar. If you rely heavily on your AI coding assistant's memory, you know how frustrating this can be.
 
-Here is the step-by-step breakdown of how I tracked down the missing data and mapped it back to the correct Git repositories using a little CLI detective work.
+Here is the step-by-step breakdown of how I tracked down the missing data and discovered how OpenCode strictly handles Git scoping and its newly upgraded SQLite database.
 
 ### The Red Herrings: XDG Base Directories and JSON files
-My first instinct was that OpenCode finally adopted the XDG Base Directory specification. Sure enough, looking in `~/.config/opencode/` showed that my state data was no longer being updated there. 
+My first instinct was to check where OpenCode stores its data. Looking in `~/.config/opencode/` showed that my state data was no longer being updated there. 
 
-I dug into the new data path at `~/.local/share/opencode/storage/session/global/` and found my old sessions sitting safely as `.json` files. 
+I dug into the newer data path at `~/.local/share/opencode/storage/session/global/` and found my old sessions sitting safely as `.json` files. 
 
-Since recent versions of OpenCode scope your history to the specific Git repository you launch it from (using the root commit hash), I assumed the upgrade just failed to move these "global" files into a project-specific folder. 
+Since recent versions of OpenCode scope your history to the specific Git repository you launch it from, I assumed the application just failed to move these "global" files into a project-specific folder after I initialized Git. 
 
 I wrote a quick script to grab my Git root hash:
 ```bash
@@ -38,7 +39,9 @@ The output revealed the smoking gun:
 /home/user/.local/share/opencode/opencode.db
 ```
 
-OpenCode hadn't just moved directories; it had completely abandoned flat JSON files in favor of a relational SQLite database. Moving my old `.json` files around did nothing because the application was no longer reading them to build the UI list.
+OpenCode hadn't just moved directories; a recent update had completely abandoned flat JSON files in favor of a relational SQLite database. Moving my old `.json` files around did nothing because the application was no longer reading them to build the UI list.
+
+
 
 ### Digging into the Database Schema
 I dumped the schema to see what I was dealing with:
@@ -52,10 +55,12 @@ I queried the `session` table directly:
 sqlite3 ~/.local/share/opencode/opencode.db "SELECT * FROM session;"
 ```
 
-**The Aha Moment:** The sessions *were* actually inside the database! The migration script hadn't failed to import them. However, it had imported my older sessions with a `project_id` of `'global'`. Because the OpenCode UI strictly filters the view based on the current Git repository's hash, it was intentionally hiding all of those 'global' rows whenever I launched the tool inside my project directory.
+**The Aha Moment:** The sessions *were* actually inside the database! They hadn't been deleted or lost during the DB upgrade. The problem was entirely based on how OpenCode handles Git repositories.
+
+When my project folders were unversioned, OpenCode saved all of their sessions under the `project_id` of `'global'`. But the moment I put those directories into a Git repo, OpenCode started identifying the workspace by its root Git commit hash. When I launched the app, the UI intentionally hid all of my old `'global'` rows because it was now strictly querying the database for the new Git hash!
 
 ### The One-Line Fix
-Since the data was already safe and sound in the database, I just needed to remap the `project_id` for those specific sessions from `'global'` to my repository's Git hash. 
+Since the data was already safe and sound in the database, I just needed to remap the `project_id` for those specific sessions from `'global'` to my new repository's Git hash. 
 
 ```bash
 # Ensure the project exists in the DB to prevent foreign key errors
@@ -74,4 +79,4 @@ One nice side effect of this new SQLite architecture is the use of `ON DELETE CA
 sqlite3 ~/.local/share/opencode/opencode.db "DELETE FROM session WHERE id = 'ses_unwanted_session_id';"
 ```
 
-If you recently upgraded OpenCode and thought you lost your mind (or your code context), stop digging through JSON files and check your `opencode.db`. A quick SQL update might be all you need.
+If you recently initialized a Git repo in an existing project and thought you lost your AI context, stop digging through JSON files and check your `opencode.db`. A quick SQL update might be all you need to bridge the gap.
