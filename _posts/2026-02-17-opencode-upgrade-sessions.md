@@ -3,8 +3,6 @@ layout: post
 title: "Where Did My OpenCode Sessions Go? Debugging a Silent SQLite Migration"
 ---
 
-# Where Did My OpenCode Sessions Go? Debugging a Silent SQLite Migration
-
 Upgrading your dev tools is usually a straightforward process—until you launch the new version and realize your entire project history has vanished. 
 
 Recently, after running an update for OpenCode to 1.2.6 on my Arch desktop, I opened my workspace only to find a completely blank session history. No recent chats, no context, just an empty sidebar. If you rely heavily on your AI coding assistant's memory, you know how frustrating this can be.
